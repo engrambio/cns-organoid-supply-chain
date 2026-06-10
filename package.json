@@ -1,0 +1,12 @@
+{
+  "name": "cns-organoid-supply-chain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive map of the CNS organoid drug-discovery supply chain",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
