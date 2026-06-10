@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The CNS Organoid Drug-Discovery Supply Chain</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root{
+    --bg:#05060d; --panel:rgba(255,255,255,0.045); --line:rgba(255,255,255,0.085);
+    --txt:#e7ebf5; --muted:#8a92a8; --accent:#7aa2ff; --red:#ff4d5e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0;background:radial-gradient(1300px 760px at 55% -12%,#111a3c 0%,#0a0c1a 42%,#05060d 100%)}
+  svg{display:block}
+  header{position:absolute;top:0;left:0;z-index:6;padding:18px 22px;max-width:440px;pointer-events:none}
+  header a{pointer-events:auto;color:#9fb4e6;text-decoration:none}
+  header a:hover{color:#fff}
+  h1{margin:0;font-size:19px;font-weight:700;letter-spacing:-0.02em;
+    background:linear-gradient(90deg,#eef2fb,#7aa2ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  header p{margin:7px 0 0;font-size:12px;line-height:1.55;color:#aab2c6}
+  header p .r{color:#ff8a96;font-weight:600}
+  header p.instr{margin-top:8px;color:var(--muted);font-size:11px}
+  .controls{position:absolute;left:22px;bottom:18px;z-index:6;display:flex;flex-wrap:wrap;gap:7px;max-width:60%}
+  .btn{pointer-events:auto;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    padding:5px 11px;border-radius:999px;font-size:11.5px;backdrop-filter:blur(8px);transition:.15s;user-select:none;white-space:nowrap}
+  .btn:hover{color:var(--txt);border-color:rgba(255,255,255,0.22)}
+  .btn.on{color:#06080f;background:var(--accent);border-color:var(--accent);font-weight:600}
+  .btn.red.on{background:var(--red);border-color:var(--red);color:#fff}
+  .sep{width:1px;align-self:stretch;background:var(--line);margin:1px 3px}
+  .legend{position:absolute;right:18px;bottom:18px;z-index:6;display:flex;flex-direction:column;gap:6px;
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px;backdrop-filter:blur(8px)}
+  .legend div{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .ring{width:9px;height:9px;border-radius:50%;border:2px solid var(--red);background:transparent;flex:none}
+  .hollow{width:9px;height:9px;border-radius:50%;border:2px dashed var(--red);background:transparent;flex:none}
+  #panel{position:absolute;top:0;right:0;height:100%;width:330px;z-index:9;transform:translateX(100%);
+    transition:transform .25s cubic-bezier(.4,0,.2,1);background:rgba(9,11,22,0.94);backdrop-filter:blur(14px);
+    border-left:1px solid var(--line);padding:22px 22px 26px;overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.5)}
+  #panel.open{transform:translateX(0)}
+  #panel .close{position:absolute;top:14px;right:16px;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
+  #panel .close:hover{color:#fff}
+  #panel .p-tier{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+  #panel .p-name{font-size:20px;font-weight:700;margin:5px 0 2px;letter-spacing:-0.02em}
+  #panel .p-cat{font-size:12px;color:var(--muted);margin-bottom:14px}
+  #panel .p-desc{font-size:13px;line-height:1.55;color:#cdd4e4;margin-bottom:16px}
+  #panel .p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-bottom:16px}
+  #panel .p-cell .k{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  #panel .p-cell .v{font-size:13px;color:var(--txt);margin-top:2px;font-variant-numeric:tabular-nums}
+  #panel .p-li{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:#cdd4e4;font-size:12px;
+    border:1px solid var(--line);border-radius:8px;padding:7px 11px;transition:.15s}
+  #panel .p-li:hover{border-color:var(--accent);color:#fff}
+  #panel .p-flag{border-radius:10px;padding:12px 13px;font-size:12px;line-height:1.5;margin-bottom:16px}
+  #panel .p-flag.choke{background:rgba(255,77,94,.09);border:1px solid rgba(255,77,94,.32)}
+  #panel .p-flag.gap{background:rgba(255,77,94,.06);border:1px dashed rgba(255,77,94,.38)}
+  #panel .p-flag .ft{font-weight:700;color:#ff8a96;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+  text{font-family:inherit;pointer-events:none}
+  .node circle{cursor:pointer;transition:opacity .18s}
+  .node .lbl{font-size:9.5px;fill:#c4cbdd;paint-order:stroke;stroke:#05060d;stroke-width:2.6px;stroke-linejoin:round;transition:opacity .18s}
+  .node .lbl.gap{font-size:10.5px;fill:#ffb3ba;font-weight:600}
+  .node.dim circle,.node.dim .lbl{opacity:.05}
+  .node.dim2 circle{opacity:.34}.node.dim2 .lbl{opacity:.24}
+  .link{fill:none;stroke:var(--line);stroke-dasharray:4 6;animation:flow 1.5s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  @keyframes pulse{0%,100%{stroke-opacity:.55}50%{stroke-opacity:1}}
+  .elbl{font-size:9.5px;fill:#eef2fb;paint-order:stroke;stroke:#05060d;stroke-width:3.6px;stroke-linejoin:round;text-anchor:middle;font-weight:500}
+  .tierband{font-size:10px;fill:rgba(255,255,255,.2);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>The CNS Organoid Drug-Discovery Supply Chain</h1>
+    <p>The organoid supply chain of a CNS drug. A <span class="r">red ring</span> is a chokepoint that the entire field depends on; a <span class="r">hollow red node</span> is a gap, a valuable part of the chain that doesn't yet exist.</p>
+    <p class="instr">Hover a node to trace what connects to it. Click any node for details on the company.<br/>Feel free to contact <a href="mailto:patel.5469@osu.edu">patel.5469@osu.edu</a> with comments/questions, and thanks for visiting!</p>
+  </header>
+  <svg id="svg"></svg>
+  <div class="controls" id="controls"></div>
+  <div class="legend" id="legend"></div>
+  <div id="panel"><span class="close" id="pClose">×</span><div id="pBody"></div></div>
+</div>
+<script src="data.js"></script>
+<script>
+const tierC = t => TIERS[Math.round(Math.min(5,Math.max(0,t)))].c;
+const tierName = t => TIERS[Math.round(Math.min(5,Math.max(0,t)))].name;
+const nodes = NODES.map(d=>Object.assign({},d,{r: d.k==="gap"?12 : d.k==="chokepoint"?10 : (d.t===5?7:6)}));
+const byId = Object.fromEntries(nodes.map(n=>[n.id,n]));
+const links = CLEAN_LINKS.map(l=>({source:l.s,target:l.t,r:l.r}));
+const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
+CLEAN_LINKS.forEach(l=>{adj[l.s].add(l.t);adj[l.t].add(l.s);});
+function secondOrder(id){const s=new Set([id]);adj[id].forEach(a=>{s.add(a);adj[a].forEach(b=>s.add(b));});return s;}
+
+const svg=d3.select("#svg");
+let W=window.innerWidth,H=window.innerHeight;
+svg.attr("width",W).attr("height",H);
+const root=svg.append("g");
+const padT=70,padB=64,mX=140;
+const layerY=t=>padT+((5-t)/5)*(H-padT-padB);
+const groups=d3.group(nodes,d=>Math.round(d.t));
+nodes.forEach(d=>{const a=groups.get(Math.round(d.t));d._i=a.indexOf(d);d._n=a.length;});
+const targetX=d=> d._n<=1 ? W/2 : mX + (d._i/(d._n-1))*(W-2*mX);
+
+const bandG=root.append("g");
+TIERS.forEach(t=>bandG.append("text").attr("class","tierband").attr("data-t",t.t).attr("x",14).attr("y",layerY(t.t)+4).text(t.name));
+
+const linkSel=root.append("g").selectAll("path").data(links).join("path").attr("class","link");
+const elG=root.append("g");
+const nodeSel=root.append("g").selectAll("g").data(nodes).join("g").attr("class","node");
+nodeSel.append("circle").attr("r",d=>d.r)
+  .attr("fill",d=>d.k==="gap"?"#0a0c18":tierC(d.t))
+  .attr("stroke",d=>d.k?"#ff4d5e":"rgba(255,255,255,.28)")
+  .attr("stroke-width",d=>d.k==="gap"?2:d.k==="chokepoint"?2.5:1)
+  .attr("stroke-dasharray",d=>d.k==="gap"?"3 3":null)
+  .style("filter",d=>d.k?"drop-shadow(0 0 9px rgba(255,77,94,.85))":`drop-shadow(0 0 5px ${tierC(d.t)}55)`)
+  .style("animation",d=>d.k==="gap"?"pulse 1.7s ease-in-out infinite":null);
+nodeSel.append("text").attr("class",d=>"lbl"+(d.k==="gap"?" gap":"")).attr("x",d=>d.r+5).attr("y",3.5).text(d=>d.n);
+
+const sim=d3.forceSimulation(nodes)
+  .force("charge",d3.forceManyBody().strength(-165))
+  .force("link",d3.forceLink(links).id(d=>d.id).distance(58).strength(0.05))
+  .force("x",d3.forceX(targetX).strength(0.14))
+  .force("y",d3.forceY(d=>layerY(d.t)).strength(0.92))
+  .force("collide",d3.forceCollide(d=>d.r+7))
+  .on("tick",tick);
+function curve(d){const x1=d.source.x,y1=d.source.y,x2=d.target.x,y2=d.target.y,my=(y1+y2)/2;
+  return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;}
+function tick(){linkSel.attr("d",curve);nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);if(hovered)positionLabels();}
+
+const zoom=d3.zoom().scaleExtent([0.3,4]).on("zoom",e=>root.attr("transform",e.transform));
+svg.call(zoom).on("dblclick.zoom",null);
+nodeSel.call(d3.drag()
+  .on("start",(e,d)=>{if(!e.active)sim.alphaTarget(.2).restart();d.fx=d.x;d.fy=d.y;})
+  .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;})
+  .on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);}));
+
+// ---- node hover: highlight web + relationship labels (de-collided, no overlap) ----
+let hovered=null,locked=false;
+function hoverNode(id){
+  hovered=id;
+  const so2=secondOrder(id), n1=new Set(adj[id]); n1.add(id);
+  nodeSel.classed("dim",n=>!so2.has(n.id)).classed("dim2",n=>so2.has(n.id)&&!n1.has(n.id));
+  linkSel.style("opacity",l=>{const d=l.source.id===id||l.target.id===id;
+      return d?1:(so2.has(l.source.id)&&so2.has(l.target.id))?0.14:0.02;})
+    .style("stroke",l=>(l.source.id===id||l.target.id===id)?(byId[id].k?"#ff6675":tierC(byId[id].t)):null);
+  renderLabels();
+}
+function clearNode(){
+  hovered=null;renderLabels();
+  nodeSel.classed("dim",false).classed("dim2",false);
+  linkSel.style("opacity",null).style("stroke",null);
+  if(dz||chokeOn||gapOn)applyFilters();
+}
+function renderLabels(){
+  const data=hovered?links.filter(l=>l.source.id===hovered||l.target.id===hovered):[];
+  const sel=elG.selectAll("text.elbl").data(data,d=>d.source.id+"_"+d.target.id);
+  sel.exit().remove();
+  sel.enter().append("text").attr("class","elbl").merge(sel).text(d=>d.r);
+  positionLabels();
+}
+function positionLabels(){
+  const arr=[];
+  elG.selectAll("text.elbl").each(function(d){arr.push({node:this,x:(d.source.x+d.target.x)/2,y:(d.source.y+d.target.y)/2});});
+  arr.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<arr.length;i++){if(arr[i].y-arr[i-1].y<13)arr[i].y=arr[i-1].y+13;}
+  arr.forEach(L=>d3.select(L.node).attr("x",L.x).attr("y",L.y));
+}
+nodeSel.on("mouseover",(e,d)=>{if(!locked)hoverNode(d.id);})
+  .on("mouseout",()=>{if(!locked)clearNode();})
+  .on("click",(e,d)=>{e.stopPropagation();locked=true;hoverNode(d.id);openPanel(d);});
+svg.on("click",()=>{locked=false;clearNode();closePanel();});
+
+// ---- detail panel ----
+const panel=document.getElementById("panel"),pBody=document.getElementById("pBody");
+document.getElementById("pClose").onclick=()=>{closePanel();locked=false;clearNode();};
+function row(k,v){return v?`<div class="p-cell"><div class="k">${k}</div><div class="v">${v}</div></div>`:"";}
+function openPanel(d){
+  let flag="";
+  if(d.k==="chokepoint")flag=`<div class="p-flag choke"><div class="ft">Chokepoint · verified</div>${d.w}</div>`;
+  if(d.k==="gap")flag=`<div class="p-flag gap"><div class="ft">Gap · doesn't exist yet</div>${d.w}</div>`;
+  const li=d.li?`<a class="p-li" href="${d.li}" target="_blank" rel="noopener">View on LinkedIn &rarr;</a>`:"";
+  const grid=d.k==="gap"?"":`<div class="p-grid">${row("Est. revenue",d.rev)}${row("Employees",d.emp)}${row("HQ",d.hq)}${row("Ownership",d.pp)}</div>`;
+  pBody.innerHTML=`<div class="p-tier" style="color:${d.k?'#ff8a96':tierC(d.t)}">${d.k==="gap"?"The gap":tierName(d.t)}</div>
+    <div class="p-name">${d.n}</div><div class="p-cat">${d.c}</div>
+    ${d.d?`<div class="p-desc">${d.d}</div>`:""}${flag}${grid}${li}`;
+  panel.classList.add("open");
+}
+function closePanel(){panel.classList.remove("open");}
+
+// ---- controls ----
+const controls=d3.select("#controls");
+const diseases=["AD","PD","ALS/FTD","Epilepsy","Psychiatry","Platform"];
+let dz=null,chokeOn=false,gapOn=false;
+function applyFilters(){
+  if(chokeOn||gapOn){
+    const want=n=>(chokeOn&&n.k==="chokepoint")||(gapOn&&n.k==="gap");
+    const near=n=>{for(const x of adj[n.id])if(byId[x]&&want(byId[x]))return true;return false;};
+    nodeSel.classed("dim",n=>!(want(n)||near(n))).classed("dim2",n=>!want(n)&&near(n));
+    linkSel.style("opacity",l=>{const s=byId[l.source.id||l.source],t=byId[l.target.id||l.target];return (want(s)||want(t))?0.9:0.03;})
+      .style("stroke",l=>{const s=byId[l.source.id||l.source],t=byId[l.target.id||l.target];return (want(s)||want(t))?"#ff5566":null;});
+    return;
+  }
+  if(dz){const keep=new Set();
+    nodes.forEach(n=>{if(n.t===5&&n.c===dz){keep.add(n.id);adj[n.id].forEach(x=>{keep.add(x);adj[x].forEach(y=>keep.add(y));});}});
+    nodeSel.classed("dim",n=>!keep.has(n.id)).classed("dim2",false);
+    linkSel.style("opacity",l=>(keep.has(l.source.id)&&keep.has(l.target.id))?0.5:0.03).style("stroke",null);
+    return;}
+  nodeSel.classed("dim",false).classed("dim2",false);
+  linkSel.style("opacity",null).style("stroke",null);
+}
+diseases.forEach(d=>{controls.append("div").attr("class","btn").text(d).on("click",function(){
+  dz=dz===d?null:d;chokeOn=false;gapOn=false;controls.selectAll(".btn").classed("on",false);
+  d3.select(this).classed("on",dz===d);applyFilters();});});
+controls.append("div").attr("class","sep");
+controls.append("div").attr("class","btn red").text("Chokepoints").on("click",function(){
+  chokeOn=!chokeOn;gapOn=false;dz=null;controls.selectAll(".btn").classed("on",false);
+  d3.select(this).classed("on",chokeOn);applyFilters();});
+controls.append("div").attr("class","btn red").text("Gaps").on("click",function(){
+  gapOn=!gapOn;chokeOn=false;dz=null;controls.selectAll(".btn").classed("on",false);
+  d3.select(this).classed("on",gapOn);applyFilters();});
+controls.append("div").attr("class","btn").text("Reset").on("click",()=>{
+  dz=null;chokeOn=false;gapOn=false;locked=false;controls.selectAll(".btn").classed("on",false);
+  clearNode();closePanel();svg.transition().duration(500).call(zoom.transform,d3.zoomIdentity);});
+
+const legend=d3.select("#legend");
+TIERS.forEach(t=>legend.append("div").html(`<span class="dot" style="background:${t.c}"></span>${t.name}`));
+legend.append("div").html(`<span class="ring"></span>Chokepoint (verified)`);
+legend.append("div").html(`<span class="hollow"></span>Gap (doesn't exist yet)`);
+
+window.addEventListener("resize",()=>{W=window.innerWidth;H=window.innerHeight;svg.attr("width",W).attr("height",H);
+  bandG.selectAll("text").attr("y",function(){return layerY(+d3.select(this).attr("data-t"))+4;});
+  sim.force("x",d3.forceX(targetX).strength(0.14)).force("y",d3.forceY(d=>layerY(d.t)).strength(0.92));sim.alpha(.3).restart();});
+</script>
+</body>
+</html>
