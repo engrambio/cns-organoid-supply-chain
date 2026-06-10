@@ -62,7 +62,8 @@
   .node .lbl.gap{font-size:10.5px;fill:#ffb3ba;font-weight:600}
   .node.dim circle,.node.dim .lbl{opacity:.05}
   .node.dim2 circle{opacity:.34}.node.dim2 .lbl{opacity:.24}
-  .link{fill:none;stroke:var(--line);stroke-dasharray:4 6;animation:flow 1.5s linear infinite}
+  .link{fill:none;stroke:var(--line);stroke-dasharray:4 6}
+  .link.flow{animation:flow 1.5s linear infinite}
   @keyframes flow{to{stroke-dashoffset:-20}}
   @keyframes pulse{0%,100%{stroke-opacity:.55}50%{stroke-opacity:1}}
   .elbl{font-size:9.5px;fill:#eef2fb;paint-order:stroke;stroke:#05060d;stroke-width:3.6px;stroke-linejoin:round;text-anchor:middle;font-weight:500}
@@ -108,13 +109,12 @@ TIERS.forEach(t=>bandG.append("text").attr("class","tierband").attr("data-t",t.t
 const linkSel=root.append("g").selectAll("path").data(links).join("path").attr("class","link");
 const elG=root.append("g");
 const nodeSel=root.append("g").selectAll("g").data(nodes).join("g").attr("class","node");
+nodeSel.filter(d=>d.k).append("circle").attr("r",d=>d.r+7).attr("fill","rgba(255,77,94,0.20)").attr("stroke","none");
 nodeSel.append("circle").attr("r",d=>d.r)
   .attr("fill",d=>d.k==="gap"?"#0a0c18":tierC(d.t))
   .attr("stroke",d=>d.k?"#ff4d5e":"rgba(255,255,255,.28)")
   .attr("stroke-width",d=>d.k==="gap"?2:d.k==="chokepoint"?2.5:1)
-  .attr("stroke-dasharray",d=>d.k==="gap"?"3 3":null)
-  .style("filter",d=>d.k?"drop-shadow(0 0 9px rgba(255,77,94,.85))":`drop-shadow(0 0 5px ${tierC(d.t)}55)`)
-  .style("animation",d=>d.k==="gap"?"pulse 1.7s ease-in-out infinite":null);
+  .attr("stroke-dasharray",d=>d.k==="gap"?"3 3":null);
 nodeSel.append("text").attr("class",d=>"lbl"+(d.k==="gap"?" gap":"")).attr("x",d=>d.r+5).attr("y",3.5).text(d=>d.n);
 
 const sim=d3.forceSimulation(nodes)
@@ -124,6 +124,10 @@ const sim=d3.forceSimulation(nodes)
   .force("y",d3.forceY(d=>layerY(d.t)).strength(0.92))
   .force("collide",d3.forceCollide(d=>d.r+7))
   .on("tick",tick);
+// pre-compute the layout so the page loads already settled (no laggy live settling)
+sim.stop();
+for(let i=0;i<260;i++)sim.tick();
+linkSel.attr("d",curve);nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);
 function curve(d){const x1=d.source.x,y1=d.source.y,x2=d.target.x,y2=d.target.y,my=(y1+y2)/2;
   return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;}
 function tick(){linkSel.attr("d",curve);nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);if(hovered)positionLabels();}
@@ -143,13 +147,14 @@ function hoverNode(id){
   nodeSel.classed("dim",n=>!so2.has(n.id)).classed("dim2",n=>so2.has(n.id)&&!n1.has(n.id));
   linkSel.style("opacity",l=>{const d=l.source.id===id||l.target.id===id;
       return d?1:(so2.has(l.source.id)&&so2.has(l.target.id))?0.14:0.02;})
-    .style("stroke",l=>(l.source.id===id||l.target.id===id)?(byId[id].k?"#ff6675":tierC(byId[id].t)):null);
+    .style("stroke",l=>(l.source.id===id||l.target.id===id)?(byId[id].k?"#ff6675":tierC(byId[id].t)):null)
+    .classed("flow",l=>(l.source.id===id||l.target.id===id));
   renderLabels();
 }
 function clearNode(){
   hovered=null;renderLabels();
   nodeSel.classed("dim",false).classed("dim2",false);
-  linkSel.style("opacity",null).style("stroke",null);
+  linkSel.style("opacity",null).style("stroke",null).classed("flow",false);
   if(dz||chokeOn||gapOn)applyFilters();
 }
 function renderLabels(){
