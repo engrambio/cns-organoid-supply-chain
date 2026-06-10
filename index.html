@@ -14,7 +14,8 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
     font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden}
   #app{position:fixed;inset:0;background:radial-gradient(1300px 760px at 55% -12%,#111a3c 0%,#0a0c1a 42%,#05060d 100%)}
-  svg{display:block}
+  #cv{position:absolute;inset:0;pointer-events:none}
+  svg{position:absolute;inset:0;display:block}
   header{position:absolute;top:0;left:0;z-index:6;padding:18px 22px;max-width:440px;pointer-events:none}
   header a{pointer-events:auto;color:#9fb4e6;text-decoration:none}
   header a:hover{color:#fff}
@@ -62,22 +63,19 @@
   .node .lbl.gap{font-size:10.5px;fill:#ffb3ba;font-weight:600}
   .node.dim circle,.node.dim .lbl{opacity:.05}
   .node.dim2 circle{opacity:.34}.node.dim2 .lbl{opacity:.24}
-  .link{fill:none;stroke:var(--line);stroke-dasharray:4 6}
-  .link.flow{animation:flow 1.5s linear infinite}
-  @keyframes flow{to{stroke-dashoffset:-20}}
-  @keyframes pulse{0%,100%{stroke-opacity:.55}50%{stroke-opacity:1}}
   .elbl{font-size:9.5px;fill:#eef2fb;paint-order:stroke;stroke:#05060d;stroke-width:3.6px;stroke-linejoin:round;text-anchor:middle;font-weight:500}
   .tierband{font-size:10px;fill:rgba(255,255,255,.2);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 </style>
 </head>
 <body>
 <div id="app">
+  <canvas id="cv"></canvas>
+  <svg id="svg"></svg>
   <header>
     <h1>The CNS Organoid Drug-Discovery Supply Chain</h1>
-    <p>The organoid supply chain of a CNS drug. A <span class="r">red ring</span> is a chokepoint that the entire field depends on; a <span class="r">hollow red node</span> is a gap, a valuable part of the chain that doesn't yet exist.</p>
+    <p>The organoid supply chain of a CNS drug. A <span class="r">red ring</span> is a chokepoint that the entire field depends on; a <span class="r">hollow red node</span> is a gap, a part of the chain that doesn't yet exist.</p>
     <p class="instr">Hover a node to trace what connects to it. Click any node for details on the company.<br/>Feel free to contact <a href="mailto:patel.5469@osu.edu">patel.5469@osu.edu</a> with comments/questions, and thanks for visiting!</p>
   </header>
-  <svg id="svg"></svg>
   <div class="controls" id="controls"></div>
   <div class="legend" id="legend"></div>
   <div id="panel"><span class="close" id="pClose">×</span><div id="pBody"></div></div>
@@ -93,20 +91,21 @@ const adj={}; nodes.forEach(n=>adj[n.id]=new Set());
 CLEAN_LINKS.forEach(l=>{adj[l.s].add(l.t);adj[l.t].add(l.s);});
 function secondOrder(id){const s=new Set([id]);adj[id].forEach(a=>{s.add(a);adj[a].forEach(b=>s.add(b));});return s;}
 
-const svg=d3.select("#svg");
 let W=window.innerWidth,H=window.innerHeight;
-svg.attr("width",W).attr("height",H);
+const svg=d3.select("#svg").attr("width",W).attr("height",H);
 const root=svg.append("g");
+const canvas=document.getElementById("cv"), ctx=canvas.getContext("2d");
 const padT=70,padB=64,mX=140;
 const layerY=t=>padT+((5-t)/5)*(H-padT-padB);
 const groups=d3.group(nodes,d=>Math.round(d.t));
 nodes.forEach(d=>{const a=groups.get(Math.round(d.t));d._i=a.indexOf(d);d._n=a.length;});
 const targetX=d=> d._n<=1 ? W/2 : mX + (d._i/(d._n-1))*(W-2*mX);
+function sizeCanvas(){const dpr=window.devicePixelRatio||1;canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+"px";canvas.style.height=H+"px";}
+sizeCanvas();
 
 const bandG=root.append("g");
 TIERS.forEach(t=>bandG.append("text").attr("class","tierband").attr("data-t",t.t).attr("x",14).attr("y",layerY(t.t)+4).text(t.name));
 
-const linkSel=root.append("g").selectAll("path").data(links).join("path").attr("class","link");
 const elG=root.append("g");
 const nodeSel=root.append("g").selectAll("g").data(nodes).join("g").attr("class","node");
 nodeSel.filter(d=>d.k).append("circle").attr("r",d=>d.r+7).attr("fill","rgba(255,77,94,0.20)").attr("stroke","none");
@@ -124,38 +123,67 @@ const sim=d3.forceSimulation(nodes)
   .force("y",d3.forceY(d=>layerY(d.t)).strength(0.92))
   .force("collide",d3.forceCollide(d=>d.r+7))
   .on("tick",tick);
-// pre-compute the layout so the page loads already settled (no laggy live settling)
+// pre-settle so the page loads already laid out (no laggy live settling)
 sim.stop();
 for(let i=0;i<260;i++)sim.tick();
-linkSel.attr("d",curve);nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);
-function curve(d){const x1=d.source.x,y1=d.source.y,x2=d.target.x,y2=d.target.y,my=(y1+y2)/2;
-  return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;}
-function tick(){linkSel.attr("d",curve);nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);if(hovered)positionLabels();}
+function tick(){nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);if(hovered)positionLabels();}
+nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);
 
-const zoom=d3.zoom().scaleExtent([0.3,4]).on("zoom",e=>root.attr("transform",e.transform));
+// ---- canvas link layer with constant flow ----
+let zoomT=d3.zoomIdentity, dash=0, so2set=null, dzKeep=null;
+const LINE="rgba(255,255,255,0.12)";
+function styleFor(l){
+  if(hovered){
+    if(l.source.id===hovered||l.target.id===hovered) return [0.95, byId[hovered].k?"#ff6675":tierC(byId[hovered].t)];
+    if(so2set&&so2set.has(l.source.id)&&so2set.has(l.target.id)) return [0.16,LINE];
+    return [0.035,LINE];
+  }
+  if(chokeOn||gapOn){
+    const s=byId[l.source.id],t=byId[l.target.id];
+    const want=(chokeOn&&(s.k==="chokepoint"||t.k==="chokepoint"))||(gapOn&&(s.k==="gap"||t.k==="gap"));
+    return want?[0.9,"#ff5566"]:[0.03,LINE];
+  }
+  if(dz&&dzKeep) return (dzKeep.has(l.source.id)&&dzKeep.has(l.target.id))?[0.55,LINE]:[0.03,LINE];
+  return [1,LINE];
+}
+function draw(){
+  dash=(dash+0.5)%10;
+  const dpr=window.devicePixelRatio||1, k=zoomT.k;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.translate(zoomT.x,zoomT.y);ctx.scale(k,k);
+  ctx.lineWidth=1/k;
+  ctx.setLineDash([4/k,6/k]);
+  ctx.lineDashOffset=-dash/k;
+  for(const l of links){
+    const st=styleFor(l);
+    ctx.globalAlpha=st[0];ctx.strokeStyle=st[1];
+    const x1=l.source.x,y1=l.source.y,x2=l.target.x,y2=l.target.y,my=(y1+y2)/2;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.bezierCurveTo(x1,my,x2,my,x2,y2);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+const zoom=d3.zoom().scaleExtent([0.3,4]).on("zoom",e=>{zoomT=e.transform;root.attr("transform",e.transform);});
 svg.call(zoom).on("dblclick.zoom",null);
 nodeSel.call(d3.drag()
   .on("start",(e,d)=>{if(!e.active)sim.alphaTarget(.2).restart();d.fx=d.x;d.fy=d.y;})
   .on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;})
   .on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);}));
 
-// ---- node hover: highlight web + relationship labels (de-collided, no overlap) ----
+// ---- node hover: highlight + relationship labels (de-collided) ----
 let hovered=null,locked=false;
 function hoverNode(id){
-  hovered=id;
-  const so2=secondOrder(id), n1=new Set(adj[id]); n1.add(id);
-  nodeSel.classed("dim",n=>!so2.has(n.id)).classed("dim2",n=>so2.has(n.id)&&!n1.has(n.id));
-  linkSel.style("opacity",l=>{const d=l.source.id===id||l.target.id===id;
-      return d?1:(so2.has(l.source.id)&&so2.has(l.target.id))?0.14:0.02;})
-    .style("stroke",l=>(l.source.id===id||l.target.id===id)?(byId[id].k?"#ff6675":tierC(byId[id].t)):null)
-    .classed("flow",l=>(l.source.id===id||l.target.id===id));
+  hovered=id;so2set=secondOrder(id);
+  const n1=new Set(adj[id]);n1.add(id);
+  nodeSel.classed("dim",n=>!so2set.has(n.id)).classed("dim2",n=>so2set.has(n.id)&&!n1.has(n.id));
   renderLabels();
 }
 function clearNode(){
-  hovered=null;renderLabels();
+  hovered=null;so2set=null;renderLabels();
   nodeSel.classed("dim",false).classed("dim2",false);
-  linkSel.style("opacity",null).style("stroke",null).classed("flow",false);
-  if(dz||chokeOn||gapOn)applyFilters();
 }
 function renderLabels(){
   const data=hovered?links.filter(l=>l.source.id===hovered||l.target.id===hovered):[];
@@ -202,17 +230,13 @@ function applyFilters(){
     const want=n=>(chokeOn&&n.k==="chokepoint")||(gapOn&&n.k==="gap");
     const near=n=>{for(const x of adj[n.id])if(byId[x]&&want(byId[x]))return true;return false;};
     nodeSel.classed("dim",n=>!(want(n)||near(n))).classed("dim2",n=>!want(n)&&near(n));
-    linkSel.style("opacity",l=>{const s=byId[l.source.id||l.source],t=byId[l.target.id||l.target];return (want(s)||want(t))?0.9:0.03;})
-      .style("stroke",l=>{const s=byId[l.source.id||l.source],t=byId[l.target.id||l.target];return (want(s)||want(t))?"#ff5566":null;});
     return;
   }
-  if(dz){const keep=new Set();
-    nodes.forEach(n=>{if(n.t===5&&n.c===dz){keep.add(n.id);adj[n.id].forEach(x=>{keep.add(x);adj[x].forEach(y=>keep.add(y));});}});
-    nodeSel.classed("dim",n=>!keep.has(n.id)).classed("dim2",false);
-    linkSel.style("opacity",l=>(keep.has(l.source.id)&&keep.has(l.target.id))?0.5:0.03).style("stroke",null);
+  if(dz){dzKeep=new Set();
+    nodes.forEach(n=>{if(n.t===5&&n.c===dz){dzKeep.add(n.id);adj[n.id].forEach(x=>{dzKeep.add(x);adj[x].forEach(y=>dzKeep.add(y));});}});
+    nodeSel.classed("dim",n=>!dzKeep.has(n.id)).classed("dim2",false);
     return;}
   nodeSel.classed("dim",false).classed("dim2",false);
-  linkSel.style("opacity",null).style("stroke",null);
 }
 diseases.forEach(d=>{controls.append("div").attr("class","btn").text(d).on("click",function(){
   dz=dz===d?null:d;chokeOn=false;gapOn=false;controls.selectAll(".btn").classed("on",false);
@@ -233,9 +257,9 @@ TIERS.forEach(t=>legend.append("div").html(`<span class="dot" style="background:
 legend.append("div").html(`<span class="ring"></span>Chokepoint`);
 legend.append("div").html(`<span class="hollow"></span>Gap`);
 
-window.addEventListener("resize",()=>{W=window.innerWidth;H=window.innerHeight;svg.attr("width",W).attr("height",H);
+window.addEventListener("resize",()=>{W=window.innerWidth;H=window.innerHeight;svg.attr("width",W).attr("height",H);sizeCanvas();
   bandG.selectAll("text").attr("y",function(){return layerY(+d3.select(this).attr("data-t"))+4;});
-  sim.force("x",d3.forceX(targetX).strength(0.14)).force("y",d3.forceY(d=>layerY(d.t)).strength(0.92));sim.alpha(.3).restart();});
+  sim.force("x",d3.forceX(targetX).strength(0.14)).force("y",d3.forceY(d=>layerY(d.t)).strength(0.92));sim.alpha(.25).restart();});
 </script>
 </body>
 </html>
