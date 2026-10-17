@@ -1,0 +1,6 @@
+# The CI gate: files that decide whether CI passes. The org's SOC2-Baseline ruleset
+# requires code-owner review, so a PR that edits these needs the owner's approval.
+/.github/                  @maxxyung
+**/scripts/check.sh        @maxxyung
+**/conftest.py             @maxxyung
+/.gitleaksignore           @maxxyung

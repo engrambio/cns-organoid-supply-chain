@@ -17,7 +17,13 @@ const TYPES = {
 };
 
 http.createServer((req, res) => {
-  let urlPath = decodeURIComponent(req.url.split("?")[0]);
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split("?")[0]);
+  } catch {
+    // a malformed escape such as /%E0%A4%A would otherwise throw and crash the process
+    res.writeHead(400); res.end("Bad request"); return;
+  }
   if (urlPath === "/" || urlPath === "") urlPath = "/index.html";
   // resolve safely inside ROOT (no path traversal)
   const filePath = path.join(ROOT, path.normalize(urlPath));
