@@ -1,0 +1,16 @@
+# Keeps SHA-pinned actions (and the engrambio/engineering-standards pin) current. Weekly, grouped
+# into one PR per ecosystem so CI minutes stay low. A 7-day cooldown keeps a release out
+# until it has survived a week in public (most hijacked releases are pulled within days);
+# security updates skip the cooldown. Add uv / npm entries per project directory, with the
+# same cooldown, if you want dependency bumps too.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

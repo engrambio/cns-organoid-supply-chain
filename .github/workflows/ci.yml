@@ -1,0 +1,52 @@
+# CI for cns-organoid-supply-chain. This repo is public, and a public repo cannot call the
+# private engrambio/engineering-standards reusable workflows, so the steps are inline and
+# follow the same contract: run ./scripts/check.sh, and ci-ok is the one required check.
+# GitHub secret scanning covers public repos, so there is no gitleaks job here.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+# PR runs cancel superseded runs; every other event gets a group per commit so a pending
+# main run is never dropped.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Run ./scripts/check.sh
+        run: ./scripts/check.sh
+
+  ci-ok:
+    if: always()
+    needs: [check]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          echo "results: $RESULTS"
+          # A re-run that turns green is a red that was hidden: say so.
+          [ "$ATTEMPT" -gt 1 ] && echo "::warning::ci-ok passed on attempt $ATTEMPT; an earlier attempt failed."
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+          done
